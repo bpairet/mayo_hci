@@ -136,7 +136,7 @@ plt.plot(algo.negative_log_hist_x,fitted_huber)
 
 
 
-![png](output_10_1.png)
+![png](https://raw.githubusercontent.com/bpairet/mayo_hci/master/example/output_10_1.png?token=ADAYZH7CK63JCFB2YWYLL5K7E2YCK)
 
 
 Finally, the last step of MAYO is done by solving the optimzation program:
