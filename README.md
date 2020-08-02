@@ -129,7 +129,7 @@ plt.plot(algo.negative_log_hist_x,fitted_huber)
 
 
 
-![png](output_10_1.png)
+![png](https://github.com/bpairet/mayo_hci/tree/master/example/output_10_1.png)
 
 
 Finally, the last step of MAYO is done by solving the optimzation program:
@@ -164,11 +164,11 @@ plots((algo.X[0] + algo.X[1]))
 
 
 
-![png](output_16_1.png)
+![png](https://github.com/bpairet/mayo_hci/tree/master/example/output_16_1.png)
 
 
 
-![png](output_16_2.png)
+![png](https://github.com/bpairet/mayo_hci/tree/master/example/output_16_2.png)
 
 
 We compute the recovered intensity for both injected companions:
