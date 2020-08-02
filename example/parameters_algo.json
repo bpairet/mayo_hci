@@ -1,0 +1,21 @@
+{
+    "data_name": "example-data",
+    "channel": 0,
+    "crop": 0,
+    "min_objective": "huber_loss",
+    "rank": 6,
+    "regularization_disk": 23750.00,
+    "regularization_planet": 40,
+    "conv" : true,
+    "sparseBasis": "shearlets",
+    "scales": 4,
+    "mask_center": 8,
+    "regularization": "constraint",
+    "tol": 0.0001,
+    "max_iter": 10000,
+    "greedy_n_iter": 10,
+    "greedy_n_iter_in_rank": 10,
+    "greedy_mask": 8,
+    "stop-optim": false
+}
+

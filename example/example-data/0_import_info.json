@@ -1,0 +1,32 @@
+
+{
+    "cube": [
+        {
+            "location": "adi-cube",
+            "channel_name": "h2"
+        },
+        {
+            "location": "adi-cube",
+            "channel_name": "h3"
+        }
+    ],
+    "angles": [
+        {
+            "location": "angles"
+        },
+        {
+            "location": "angles"
+        }
+    ],
+    "angles_multiply": 1,
+    "psf": [ 
+        {
+            "location": "psf",
+            "which_psf": "1"
+        },
+        {
+            "location": "psf",
+            "which_psf": "1"
+        }
+    ]
+}
