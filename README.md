@@ -165,7 +165,7 @@ plots((algo.X[0] + algo.X[1]))
 
 
 
-.. image:: https://github.com/bpairet/mayo_hci/tree/master/example/output_16_1.png
+.. image:: https://raw.githubusercontent.com/bpairet/mayo_hci/master/example/output_16_1.png?token=ADAYZH6KAFN5L4YQFX76G5C7E2XNK
 .. image:: https://github.com/bpairet/mayo_hci/tree/master/example/output_16_2.png
 
 We compute the recovered intensity for both injected companions:
