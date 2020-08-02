@@ -164,12 +164,9 @@ plots((algo.X[0] + algo.X[1]))
 
 
 
-![png](https://github.com/bpairet/mayo_hci/tree/master/example/output_16_1.png)
 
-
-
-![png](https://github.com/bpairet/mayo_hci/tree/master/example/output_16_2.png)
-
+.. image:: https://github.com/bpairet/mayo_hci/tree/master/example/output_16_1.png
+.. image:: https://github.com/bpairet/mayo_hci/tree/master/example/output_16_2.png
 
 We compute the recovered intensity for both injected companions:
 
