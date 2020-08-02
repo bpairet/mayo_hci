@@ -12,7 +12,8 @@
     GNU General Public License for more details.
 
 
-The aim of the present notebook is to illustrate the use of the MAYO pipeline. We reproduce the disk + 2 synthetic planets experiment corresponding to Sec. 5.4 from the MAYO paper. 
+
+We illustrate the use of mayo_hci by reproducing the disk + 2 synthetic planets experiment corresponding to Sec. 5.4 from the MAYO paper. (the notebook is available at https://github.com/bpairet/mayo_hci/blob/master/example/Illustration%20of%20the%20MAYONNAISE%20pipeline.ipynb)
 
 
 ```python
@@ -40,7 +41,7 @@ with open(working_directory+'parameters_algo.json', 'r') as read_file_parameters
 print(parameters_algo)
 ```
 
-    {'data_name': 'example-data', 'channel': 0, 'crop': 256, 'min_objective': 'huber_loss', 'rank': 6, 'regularization_disk': 23750.0, 'regularization_planet': 40, 'conv': True, 'sparseBasis': 'shearlets', 'scales': 4, 'mask_center': 8, 'regularization': 'constraint', 'tol': 0.0001, 'max_iter': 10000, 'greedy_n_iter': 10, 'greedy_n_iter_in_rank': 10, 'greedy_mask': 8, 'stop-optim': False}
+    {'data_name': 'example-data', 'channel': 0, 'crop': 0, 'min_objective': 'huber_loss', 'rank': 6, 'regularization_disk': 23750.0, 'regularization_planet': 40, 'conv': True, 'sparseBasis': 'shearlets', 'scales': 4, 'mask_center': 8, 'regularization': 'constraint', 'tol': 0.0001, 'max_iter': 10000, 'greedy_n_iter': 10, 'greedy_n_iter_in_rank': 10, 'greedy_mask': 8, 'stop-optim': False}
 
 
 data_name, channel, and crop are used to load the dataset.
@@ -86,8 +87,7 @@ The MAYO pipeline is instantiated, the data is loaded, synthetic signal injected
 algo = mayo_hci.all_ADI_sequence_mayonnaise_pipeline(working_directory) 
 ```
 
-    Fits HDU-0 data successfully loaded. Data shape: (2, 48, 1024, 1024)
-    New shape: (48, 256, 256)
+    Fits HDU-0 data successfully loaded. Data shape: (48, 256, 256)
     imported cube on channel: h2
     Fits HDU-0 data successfully loaded. Data shape: (48,)
     Fits HDU-0 data successfully loaded. Data shape: (2, 2, 64, 64)
@@ -102,11 +102,18 @@ algo = mayo_hci.all_ADI_sequence_mayonnaise_pipeline(working_directory)
 
 
     Synthetic signal added to data
-    Fits HDU-0 data successfully loaded. Data shape: (10, 256, 256)
-    Fits HDU-0 data successfully loaded. Data shape: (48, 256, 256)
+    --------------------------------------------------------
+    Starting GreeDS with 
+          n_iter = 10
+          mask_radius = 8
+          n_iter_in_rank = 10
+    --------------------------------------------------------
+    done, returning iter_frames
+    Fits file successfully saved
+    Fits file successfully saved
     Estimating the Huber-loss parameters...
     Huber-loss parameters successfully estimated
-    [1.49961793 0.72655799]
+    [1.55112146 0.71066033]
 
 
 We can, for instance, check that the HuberFit worked as planned:
@@ -124,7 +131,7 @@ plt.plot(algo.negative_log_hist_x,fitted_huber)
 
 
 
-    [<matplotlib.lines.Line2D at 0x133977b00>]
+    [<matplotlib.lines.Line2D at 0x110931e48>]
 
 
 
@@ -197,21 +204,6 @@ print('The LSE of the estimation is thus {}'.format(error_est_2))
     Recovered of second planet is 18.98017120361328 out of a total of 20
     The LSE of the estimation is thus 0.05099143981933594
 
-
-
-```python
-
-```
-
-
-```python
-
-```
-
-
-```python
-
-```
 
 Finally, instead of running 'algo.solve_optim()', we can also use the pyds9 package to display the current estimation of the disk and exoplanetary signal:
 
