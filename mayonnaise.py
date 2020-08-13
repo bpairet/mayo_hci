@@ -17,7 +17,6 @@ import vip_hci as vip
 
 import json
 
-from disk_greedy_iter_rank import algo_disk_1_rankIter
 import numpy as np
 from sklearn.decomposition import randomized_svd
 
@@ -133,7 +132,6 @@ class mayonnaise_pipeline(object):
             else:
                 data_  = np.copy(self.data)
             '''
-            #iter_frames, _,xl = algo_disk_1_rankIter(data_,self.angles,greedy_n_iter,r_mask_greedy,fraction_coeff,n_iter_in_rank,interpolation,low_frequency=False,plot_true=False,verbose=True)
             iter_frames, xl = mayo_hci.GreeDS(self,aggressive_GreeDS=aggressive_GreeDS)
             if not force_GreeDS: # force_GreeDS is used for bootstrap, we do not want to save the result
                 vip.fits.write_fits(self.working_dir+saving_string+'_iter_frames.fits',iter_frames)
