@@ -19,7 +19,6 @@ import numpy as np
 import json
 import sys
 
-from utils import compute_stim_map
 from hciplot import plot_frames as plots
 
 
