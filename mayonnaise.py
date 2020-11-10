@@ -60,8 +60,6 @@ def verify_parameters_algo(parameters_algo):
     except KeyError:
         parameters_algo['mask_center'] = 0
     assert ('scales' in parameters_algo), "KeyError: no scales, required for shearlets regularization, no output produced..."
-    #if parameters_algo['min_objective'] == 'huber_loss':
-    #    assert ('huber_param' in parameters_algo), "KeyError: no huber_param, required for huber_loss, no output produced..."
     return parameters_algo
 
 
@@ -288,6 +286,7 @@ class mayonnaise_pipeline(object):
             self.parameters_algo['stop-optim'] = 'VAR_CONV'
         if self.n_iter >= self.parameters_algo['max_iter']:
             self.parameters_algo['stop-optim'] = 'MAX_ITER'
+    
     def solve_optim(self):
         '''
         Solve optimization problem from Pairet etal. 2020, by calling mayonnaise_pipeline_iteration

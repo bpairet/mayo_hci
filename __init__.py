@@ -14,7 +14,6 @@
     GNU General Public License for more details.
 '''
 
-#from mayo_hci.local_info import local_info
 
 import numpy as np
 import vip_hci as vip

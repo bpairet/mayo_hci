@@ -42,7 +42,6 @@ def create_list_lambda_d_and_p(list_lambda_d,list_lambda_p,make_all_possible_pai
         assert(len(list_lambda_d) == len(list_lambda_p)),"list_lambda_d and list_lambda_p must be of same length when make_all_possible_pairs==False"                       
         for i,_ in enumerate(list_lambda_p):
             list_lambda_d_and_p.append((float(list_lambda_d[i]),float(list_lambda_p[i])))
-    #print(list_lambda_p_and_d)
     return list_lambda_d_and_p
 
 def isnotebook():

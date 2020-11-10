@@ -64,6 +64,7 @@ def create_synthetic_data_with_disk_planet(empty_data,angles,psf,add_synthetic_s
         add_synthetic_signal['disk_intensity_thresh'] = 60
     t,n,_ = empty_data.shape
     kernel = np.fft.fft2(np.fft.fftshift(psf))
+    
     # 
     # Disk injection
     # 

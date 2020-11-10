@@ -34,6 +34,7 @@ from simplex_projection import euclidean_proj_l1ball
 
 def A(f,K):
     return np.real(np.fft.ifft2(np.fft.fft2(f) * K))
+
 def A_(f,K):
     return np.real(np.fft.ifft2(np.fft.fft2(f) * np.ma.conjugate(K)))
 
@@ -49,9 +50,7 @@ def proj_low_rank(x,k):
     '''
         proj_low_rank
     '''
-    #x=x*1.
     U, s, V = randomized_svd(x, n_components=k, n_iter=5,transpose='auto')
-    #U, s, V = np.linalg.svd(x,full_matrices=False)
     s[k:] = 0
     return np.dot(U,np.dot(np.diag(s),V))
 
@@ -172,7 +171,6 @@ def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss,ker
         angle: torch.tensor = torch.ones(1) * (angles[k])
         M: torch.tensor = kornia.get_rotation_matrix2d(center, angle, scale)
         rotated_xs = kornia.warp_affine(torch_xs.float(), M, dsize=(n,n))
-        #xs_rotated[k,:,:] = rotated_xs.detach().numpy()
         loss = loss + compute_loss( fft_conv_np_torch(rotated_xs[0,0,:,:]) + torch_L[k,:,:] - torch_data[k,:,:]) 
     loss.backward()
     torch_grad_xs = torch_xs.grad
@@ -180,9 +178,7 @@ def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss,ker
 
 
     np_grad_xs = torch_grad_xs[0,0,:,:].detach().numpy()
-    #np_grad_L = torch_grad_L.detach().numpy()*mask
     np_grad_L = torch_grad_L.detach().numpy()
-    #grad_d_p = A_(np_grad_xs,kernel)*mask
     grad_d_p = np_grad_xs*mask
     return grad_d_p, grad_d_p, np_grad_L.reshape(t,n*n), loss.detach().numpy()
 
@@ -232,10 +228,7 @@ def grad_MCA_pytorch(xd,xp,noisy_disk_planet,compute_loss,conv_op,adj_conv_op,ma
     loss.backward()
     torch_grad_xs = torch_xs.grad
 
-
-
     np_grad_xs = torch_grad_xs.detach().numpy()
-    #return A_(np_grad_xs,kernel)*mask , loss.detach().numpy()
     grad_xs = np_grad_xs*mask
     return  grad_xs, grad_xs, loss.detach().numpy()
 
@@ -341,16 +334,13 @@ def get_huber_parameters(algo):
 
     total_number_in_bin = 0
     for kk in range(N_bins):
-        #INV_sub_exp_levels[kk] = np.sum(error>=values[kk])*1.
         who_is_in_bin = (np.abs(normalized_error) >= values[kk])*1.*(np.abs(normalized_error) < values[kk+1])*algo.mask
         pdf[kk] = (np.sum(who_is_in_bin))
         total_number_in_bin += pdf[kk]
     pdf = pdf/total_number_in_bin
-    #INV_sub_exp_levels = INV_sub_exp_levels/n**2
     values = values[:-1]
 
     y = pdf*(pdf>0)
-    #y += 10**-10
     bins_to_consider = np.where(y>0) # we do not look at bins with zero elements
     y = y[bins_to_consider]
     y /= np.max(y)
@@ -358,8 +348,7 @@ def get_huber_parameters(algo):
     y = -np.log(y)
 
     x = values[bins_to_consider]
-    #import matplotlib.pyplot as plt
-    #plt.figure()
+
     from scipy.optimize import curve_fit
     try:
         pw, cov = curve_fit(compute_huber_loss, x, y)
@@ -377,7 +366,6 @@ def get_huber_parameters(algo):
         c = float(input('Choose value of c :   ') )
         delta = float(input('Choose value of delta :   ') )
         pw = delta, c
-    #    pw = (0,0)
     algo.negative_log_hist_x = x
     algo.negative_log_hist_y = y
     algo.fitted_pw = pw
