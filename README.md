@@ -15,6 +15,7 @@
 
 We illustrate the use of mayo_hci by reproducing the disk + 2 synthetic planets experiment corresponding to Sec. 5.4 from the MAYO paper. (the notebook is available at https://github.com/bpairet/mayo_hci/blob/master/example/Illustration%20of%20the%20MAYONNAISE%20pipeline.ipynb)
 
+The documentation is available at https://bpairet.github.io/ (work in progress).
 
 ```python
 from hciplot import plot_frames as plots
