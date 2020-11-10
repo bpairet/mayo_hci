@@ -1,5 +1,5 @@
-MAYO - Processing pipeline
-==========================
+MAYO processing pipeline
+========================
 
 About
 -----
