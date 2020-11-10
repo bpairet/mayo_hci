@@ -7,6 +7,9 @@ MAYO is a pipeline for exoplanet and disk high-contrast imaging from ADI dataset
 Pairet, Benoît, Faustine Cantalloube, and Laurent Jacques.
 "MAYONNAISE: a morphological components analysis pipeline for circumstellar disks and exoplanets imaging in the near infrared." arXiv preprint arXiv:2008.05170 (2020).  
 
+.. image:: https://github.com/bpairet/mayo_hci/blob/master/example/PDS70_MAYONNAISE-sqrt.pdf
+
+
 Jupyter notebook
 ----------------
 An illustrative jupyter notebook is available at https://github.com/bpairet/mayo_hci/blob/master/example/Illustration%20of%20the%20MAYONNAISE%20pipeline.ipynb
