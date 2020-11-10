@@ -1,4 +1,8 @@
 '''
+Injects synthetic circumstellar signal into an empty ADI dataset
+'''
+
+'''
  MAYO pipeline, from Pairet et al. 2020
     Copyright (C) 2020, Benoit Pairet
 
@@ -21,7 +25,26 @@ import torch
 import kornia
 
 def create_synthetic_data_with_disk_planet(empty_data,angles,psf,add_synthetic_signal):
-    
+    """
+    automatic_load_data(data_name,channel=0,dir='default',RDI=False,quick_look=0,crop=0,center_im=None)
+        loads ADI datasets automatically 
+    Parameters
+    ----------
+    data : numpy array
+        t x n x n the empty (without circumstellar signal) ADI dataset
+    angles :  numpy array
+        list of angles
+    psf :  numpy array
+        n x n psf
+    add_synthetic_signal
+        tuple containing all the properties of the injected signal 
+    Returns
+    -------
+    data : numpy array
+        t x n x n, ADI dataset (empty_data + circumstellar signal injected)
+    disk : numpy array
+        n x n, the injected circumstellar signal (disk+planet) 
+    """ 
     disk_max_intensity = add_synthetic_signal['disk_max_intensity']
     disk_inclination = add_synthetic_signal['disk_inclination']
     planets_positions_intensities = tuple(add_synthetic_signal['planets_positions_intensities'])
@@ -56,10 +79,10 @@ def create_synthetic_data_with_disk_planet(empty_data,angles,psf,add_synthetic_s
     disk = disk*(disk>add_synthetic_signal['disk_intensity_thresh'])
 
     disk = disk/np.max(disk)*disk_max_intensity
+
     # 
     # Planet injection
     # 
-
     if planets_positions_intensities:
         planet = np.zeros((n,n))
         for xx,yy,intensity in planets_positions_intensities:

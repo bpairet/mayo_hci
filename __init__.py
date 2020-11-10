@@ -1,3 +1,4 @@
+
 '''
  MAYO pipeline, from Pairet et al. 2020
     Copyright (C) 2020, Benoit Pairet
@@ -13,12 +14,14 @@
     GNU General Public License for more details.
 '''
 
+#from mayo_hci.local_info import local_info
 
 import numpy as np
 import vip_hci as vip
 
 
 from mayo_hci.operators import *
+from mayo_hci.algo_utils import *
 
 from mayo_hci.mayonnaise import *
 

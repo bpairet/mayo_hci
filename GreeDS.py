@@ -1,4 +1,9 @@
 '''
+GreeDS algorithm from Pairet etal 2020
+
+'''
+
+'''
  MAYO pipeline, from Pairet et al. 2020
     Copyright (C) 2020, Benoit Pairet
 
@@ -14,15 +19,25 @@
 '''
 
 import numpy as np
-
 import vip_hci as vip
-
-from hciplot import plot_frames as plots
-
 import mayo_hci
 
 
-def GreeDS(algo,aggressive_GreeDS=False):
+def GreeDS(algo):
+    """
+        GreeDS(algo)
+        Compute the GreeDS algorithm.
+        Parameters
+        ----------
+        algo : instance of a subclass of mayonnaise_pipeline
+        
+        Returns
+        -------
+        iter_frames : numpy.array
+            Images produced by GreeDS for ranks from 0 to n_iter.
+        xl : numpy.array
+            Speckle field estimated by GreeDS.
+    """
     print('--------------------------------------------------------')
     print('Starting GreeDS with ')
     print('      n_iter = ' + str(algo.parameters_algo['greedy_n_iter']))
@@ -32,11 +47,9 @@ def GreeDS(algo,aggressive_GreeDS=False):
     t,n,_ = algo.data.shape
     x_k = np.zeros((n,n))
     iter_frames = np.zeros([algo.parameters_algo['greedy_n_iter'],n,n])
-    #eta = 1
     for r in range(algo.parameters_algo['greedy_n_iter']):
         ncomp = r + 1
         for l in range(algo.parameters_algo['greedy_n_iter_in_rank']):
-            #x_k1 = (1-eta)*x_k + eta*f_GreeDS(x_k,algo.data,algo.angles,ncomp)
             x_k1, xl = f_GreeDS(x_k,algo,ncomp)
             x_k = np.copy(x_k1)
         iter_frames[r,:,:] = x_k1
@@ -44,9 +57,28 @@ def GreeDS(algo,aggressive_GreeDS=False):
     return iter_frames, xl
 
 
-            #iter_frames, _,xl = algo_disk_1_rankIter(data_,self.angles,greedy_n_iter,r_mask_greedy,fraction_coeff,n_iter_in_rank,interpolation,low_frequency=False,plot_true=False,verbose=True)
 
 def f_GreeDS(x,algo,ncomp):
+    """
+        f_GreeDS(x,algo,ncomp)
+        Compute a single iteration of the GreeDS algorithm.
+
+        Parameters
+        ----------
+        x : numpy.array
+            current estimate of the circumstellar signal
+        algo : instance of a subclass of mayonnaise_pipeline
+
+        ncomp: int
+            rank of the speckle field component (xl)
+
+        Returns
+        -------
+        frame : numpy.array
+            Current image produced by GreeDS.
+        L : numpy.array
+            Current speckle field estimated by GreeDS.
+    """
     t,n,_ = algo.data.shape
     X = np.zeros((t,n,n))
     X[:,:,:] = x
