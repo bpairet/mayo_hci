@@ -151,7 +151,7 @@ class mayonnaise_pipeline(object):
         else:
             is_run_GreeDS = True
         if is_run_GreeDS:
-            iter_frames, xl = mayo_hci.GreeDS(self,aggressive_GreeDS=aggressive_GreeDS)
+            iter_frames, xl = mayo_hci.GreeDS(self)
             if not force_GreeDS: # force_GreeDS is used for bootstrap, we do not want to save the result
                 vip.fits.write_fits(self.working_dir+saving_string+'_iter_frames.fits',iter_frames)
                 vip.fits.write_fits(self.working_dir+saving_string+'_xl.fits',xl)
