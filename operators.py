@@ -128,7 +128,6 @@ def compute_cube_frame_conv_only_planet_grad_pytorch(xp,xl,matrix,angles,compute
     grad_d_p, _, np_grad_L, loss = compute_cube_frame_conv_grad_pytorch(xp,xp*0,xl,matrix,angles,compute_loss,kernel,mask, center_image)
     return grad_d_p, np_grad_L, loss
 
-
 def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss,kernel,mask, center_image):
     t,_ = matrix.shape
     xs = xd + xp
@@ -181,6 +180,68 @@ def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss,ker
     np_grad_L = torch_grad_L.detach().numpy()
     grad_d_p = np_grad_xs*mask
     return grad_d_p, grad_d_p, np_grad_L.reshape(t,n*n), loss.detach().numpy()
+
+
+def mod_compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss,kernel,mask, center_image, U_L0, stochastic):
+    rank,_ = xl.shape
+    t,_ = matrix.shape
+    if stochastic:
+        #number_of_frames = int(t*stochastic)
+        #list_indexes = np.random.choice(t, number_of_frames, replace=False)
+        number_data = int(np.floor(1./stochastic))
+        sub_data_index = np.random.randint(0,number_data)
+        list_indexes = np.arange(t)[sub_data_index::number_data] 
+    else:
+        list_indexes = range(t)
+    xs = xd + xp
+    n,_ = xs.shape
+    conv_op = lambda x : A(x,kernel)
+    adj_conv_op = lambda x : A_(x,kernel)
+    if t != angles.shape[0]:
+        print('ANGLES do not have t elements!')
+    
+    class FFTconv_numpy_torch(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, input):
+            numpy_input = input.detach().numpy()
+            result = conv_op(numpy_input)
+            return input.new(result)
+        @staticmethod
+        def backward(ctx, grad_output):
+            numpy_go = grad_output.numpy()
+            result = adj_conv_op(numpy_go)
+            return grad_output.new(result)
+    def fft_conv_np_torch(input):
+        return FFTconv_numpy_torch.apply(input)
+
+    # needed for rotation:
+    center: torch.tensor = torch.ones(1, 2)
+    center[..., 0] = center_image[0] # x
+    center[..., 1] = center_image[1] # y
+    scale: torch.tensor = torch.ones(1)
+
+    torch_xs = torch.tensor([[xs]],requires_grad=True)
+
+
+    torch_data = torch.tensor(matrix.reshape(t,n,n))
+    torch_L = torch.tensor(xl,requires_grad=True)
+    torch_U_L0 = torch.tensor(U_L0,requires_grad=False)
+
+    loss : torch.tensor = torch.zeros(1,requires_grad=True)
+
+    for k in list_indexes:
+        angle: torch.tensor = torch.ones(1) * (angles[k])
+        M: torch.tensor = kornia.get_rotation_matrix2d(center, angle, scale)
+        rotated_xs = kornia.warp_affine(torch_xs.float(), M, dsize=(n,n))
+        loss = loss + compute_loss( fft_conv_np_torch(rotated_xs[0,0,:,:]) + torch.mm(torch_U_L0[None,k,:],torch_L).reshape(n,n) - torch_data[k,:,:]) 
+    loss.backward()
+    torch_grad_xs = torch_xs.grad
+    torch_grad_L = torch_L.grad
+
+    np_grad_xs = torch_grad_xs[0,0,:,:].detach().numpy()
+    np_grad_L = torch_grad_L.detach().numpy()
+    grad_d_p = np_grad_xs*mask
+    return grad_d_p, grad_d_p, np_grad_L.reshape(rank,n*n), loss.detach().numpy()
 
 def compute_rotated_cube_grad_pytorch(xd,xp,bar_data,compute_loss,kernel,mask):
     t,_,_ = bar_data.shape

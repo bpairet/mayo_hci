@@ -25,7 +25,7 @@ import json
 import sys
 import os
 
-from utils import compute_stim_map
+from vip.metrics.stim import compute_stim_map 
 from hciplot import plot_frames as plots
 
 import mayo_hci
@@ -47,7 +47,7 @@ def automatic_load_data(data_name,channel=0,dir='default',quick_look=0,crop=0,ce
         if crop > 0, crops the ADI cube to the desired width, default is 0
     center_im : tuple
         (x,y), center of the frame
-
+    
     Returns
     -------
     data : numpy array
@@ -56,7 +56,7 @@ def automatic_load_data(data_name,channel=0,dir='default',quick_look=0,crop=0,ce
         list of angles
     psf :  numpy array
         n x n psf
-
+    
     if quick_look >0 : 
     frame :  numpy array
         n x n, PCA-SFS processed frame

@@ -59,6 +59,10 @@ def verify_parameters_algo(parameters_algo):
         parameters_algo['mask_center']
     except KeyError:
         parameters_algo['mask_center'] = 0
+    try:
+        parameters_algo['stochastic']
+    except KeyError:
+        parameters_algo['stochastic'] = False
     assert ('scales' in parameters_algo), "KeyError: no scales, required for shearlets regularization, no output produced..."
     return parameters_algo
 
@@ -110,6 +114,33 @@ class mayonnaise_pipeline(object):
         self.residuals = np.copy(self.GreeDS_frame)
         self.xp = np.zeros((self.n,self.n))
         self.define_optimization_function() #dummy definition of function, redifined in child classes
+    def check_LLT_smallerOne(self,n_tests): 
+        '''
+         Check that the norm of LL_T is smaller than 1/(delta gamma), see PD3O from Yan 2018 for details.
+        '''
+        max_norm_LLTx = 0
+        norm_LLTx = 0
+        #for ii in range(self.n_variables):
+        #    x = self.S[ii]/np.sqrt(np.sum(self.S[ii]**2))
+        #    norm_LLTx += np.sum( (self.L[ii](self.L_T[ii](x)) )**2 )
+        #norm_LLTx = np.sqrt( norm_LLTx )
+        #if max_norm_LLTx < norm_LLTx:
+        #    max_norm_LLTx = norm_LLTx
+        for i in range(n_tests):
+            x = [np.random.randn(*self.S[ii].shape) for ii in range(self.n_variables)]
+            norm_LLTx = 0
+            for ii in range(self.n_variables):
+                norm_LLTx += np.sum( (self.L[ii](self.L_T[ii](x[ii])) )**2 )
+            norm_LLTx = np.sqrt( norm_LLTx )
+            if max_norm_LLTx < norm_LLTx:
+                max_norm_LLTx = norm_LLTx
+        if max_norm_LLTx > 1./(self.gamma*self.delta):
+            print(" || LLTx ||(delta gamma) = "+str(norm_LLTx*(self.gamma*self.delta))+" ! Values of delta is changed")
+            #self.delta = 0.5/(self.gamma*(max_norm_LLTx))
+            self.delta = 0.75/(self.gamma*(max_norm_LLTx))
+        else:
+            print('For all the '+str(n_tests)+' LLTx was good ( || LLTx ||(delta gamma) = '+str(norm_LLTx*(self.gamma*self.delta))+'). delta seems allright, maybe too low.')
+        print(max_norm_LLTx)
     def check_M_positive_semidefinite(self,n_tests): 
         '''
          The matrix xMx (as computed in compute_xMx) must be positive definite for PD3O from Yan 2018 to converge.
@@ -199,11 +230,11 @@ class mayonnaise_pipeline(object):
         self.prox_gamma_g = [positivity, positivity]
         self.prox_delta_h_star = [lambda x : x - self.delta*(self.prox_basis_disk(x/self.delta)), 
                                     lambda x : x - self.delta*(self.prox_basis_planet(x/self.delta))]
-    def mayonnaise_pipeline_initialisation(self,Lip):
+    def mayonnaise_pipeline_initialisation(self):
         if self.parameters_algo['min_objective'] == 'huber_loss':
-            Lip *= np.max(1/self.sigma_by_annulus)
-        self.gamma = 1.3/Lip
-        self.delta = 0.9/self.gamma
+            self.Lip *= np.max(1/self.sigma_by_annulus)
+        self.gamma = 1.1/self.Lip
+        self.delta = self.gamma/2
         self.norm_data = np.sqrt(np.sum(self.data**2))
         self.X = [0,0]
         self.S = [0, 0]
@@ -297,6 +328,55 @@ class mayonnaise_pipeline(object):
         print('Done with optimization')
 
 
+class mod_mayonnaise_pipeline(mayonnaise_pipeline):
+    '''
+    Modification of main instance of MAYO, solves optimization problem 27 from Pairet etal 2020
+    # todo : create an explicit L_L_T() operator, should be faster for the l variable if r is large
+    '''
+    def __init__(self,working_dir):
+        super(mod_mayonnaise_pipeline, self).__init__(working_dir)
+        self.set_disk_planet_regularization()
+        self.mayonnaise_pipeline_initialisation()
+        self.define_optimization_function()
+    def mayonnaise_pipeline_initialisation(self):
+        self.Lip = self.t
+        if self.parameters_algo['stochastic']:
+            self.Lip *= self.parameters_algo['stochastic']
+        super(mod_mayonnaise_pipeline, self).mayonnaise_pipeline_initialisation()
+        bar_U_L0,self.Sigma_L0,self.V_L0 = randomized_svd(self.xl.reshape(self.t,self.n*self.n), n_components=self.parameters_algo['rank'], n_iter=5,transpose='auto')
+        U_grad_factor = np.sqrt(self.t)
+        #U_grad_factor = 1
+        if self.parameters_algo['stochastic']:
+            U_grad_factor *= self.parameters_algo['stochastic']
+        self.U_grad = bar_U_L0*U_grad_factor
+        self.U_L0 = bar_U_L0/(np.sqrt( np.sum( (bar_U_L0)**2)) * self.parameters_algo['rank']**2) # this is to make the semi-positiveness of M indepedant of the rank used
+        l_init = 1./U_grad_factor*(self.Sigma_L0[:,None]*self.V_L0).reshape(self.parameters_algo['rank'],self.n*self.n)
+        self.S_der = mayo_hci.cube_rotate_kornia(self.data - np.dot(self.U_grad,l_init).reshape(self.t,self.n,self.n),-self.angles,self.center_image)
+        self.xd = np.median(self.S_der,axis=0)*self.mask
+        self.xd *= self.xd>0
+        self.xp = np.zeros((self.n,self.n))
+        self.X = [self.xd, self.xp, l_init]
+        self.S = [self.L[0](self.xd),self.L[1](self.xp),self.L[2](l_init)]
+        self.Z = [self.xd,self.xp, l_init]
+        self.norm_data = np.sqrt(np.sum(self.data**2))
+    def define_optimization_function(self):
+        super(mod_mayonnaise_pipeline, self).define_optimization_function()
+        self.n_variables = 3
+        self.compute_grad = lambda : mod_compute_cube_frame_conv_grad_pytorch(self.X[0],self.X[1],self.X[2],matrix=self.matrix,angles=self.angles,
+                                                    compute_loss=self.compute_loss,
+                                                    kernel=self.kernel,
+                                                    mask=self.mask,
+                                                    center_image=self.center_image,
+                                                    U_L0 = self.U_grad,
+                                                    stochastic=self.parameters_algo['stochastic'])
+        self.noisy_disk_planet = self.GreeDS_frame
+        self.L =  [lambda x : self.Phi(x), lambda x : x, lambda x : np.dot(self.U_L0,x)]
+        self.L_T =  [lambda x : self.Phi_T(x), lambda x : x, lambda x : np.dot(self.U_L0.T,x)]
+        self.prox_gamma_g = [positivity, positivity, lambda x : x]
+        self.prox_delta_h_star = [lambda x : x - self.delta*(self.prox_basis_disk(x/self.delta)), 
+                                    lambda x : x - self.delta*(self.prox_basis_planet(x/self.delta)),
+                                    lambda x : x - self.delta*(positivity(x/self.delta))]
+        self.noisy_disk_planet = self.GreeDS_frame
 
 class all_ADI_sequence_mayonnaise_pipeline(mayonnaise_pipeline):
     '''
@@ -308,8 +388,8 @@ class all_ADI_sequence_mayonnaise_pipeline(mayonnaise_pipeline):
         self.mayonnaise_pipeline_initialisation()
         self.define_optimization_function()
     def mayonnaise_pipeline_initialisation(self):
-        Lip = self.t
-        super(all_ADI_sequence_mayonnaise_pipeline, self).mayonnaise_pipeline_initialisation(Lip)
+        self.Lip = self.t
+        super(all_ADI_sequence_mayonnaise_pipeline, self).mayonnaise_pipeline_initialisation()
         self.U_L0,_,_ = randomized_svd(self.xl.reshape(self.t,self.n*self.n), n_components=self.parameters_algo['rank'], n_iter=5,transpose='auto')
         Low_rank_xl = (self.U_L0 @ self.U_L0.T @ self.xl.reshape(self.t,self.n*self.n) ).reshape(self.t,self.n,self.n)
         self.S_der = mayo_hci.cube_rotate_kornia(self.data - Low_rank_xl,-self.angles,self.center_image)
@@ -385,8 +465,8 @@ class all_ADI_sequence_mayonnaise_pipeline_no_regul(mayonnaise_pipeline):
         self.define_optimization_function()
         self.delta = 1
     def mayonnaise_pipeline_initialisation(self):
-        Lip = self.t
-        super(all_ADI_sequence_mayonnaise_pipeline_no_regul, self).mayonnaise_pipeline_initialisation(Lip)
+        self.Lip = self.t
+        super(all_ADI_sequence_mayonnaise_pipeline_no_regul, self).mayonnaise_pipeline_initialisation()
         self.U_L0,_,_ = randomized_svd(self.xl.reshape(self.t,self.n*self.n), n_components=self.parameters_algo['rank'], n_iter=5,transpose='auto')
         Low_rank_xl = (self.U_L0 @ self.U_L0.T @ self.xl.reshape(self.t,self.n*self.n) ).reshape(self.t,self.n,self.n)
         self.X = [self.xd, Low_rank_xl.reshape(self.t,self.n*self.n)]
@@ -421,8 +501,8 @@ class mca_disk_planet_mayonnaise_pipeline(mayonnaise_pipeline):
         self.define_optimization_function()
         self.frame_data = np.copy(self.GreeDS_frame)
     def mayonnaise_pipeline_initialisation(self):
-        Lip = 1.
-        super(mca_disk_planet_mayonnaise_pipeline, self).mayonnaise_pipeline_initialisation(Lip)
+        self.Lip = 1.
+        super(mca_disk_planet_mayonnaise_pipeline, self).mayonnaise_pipeline_initialisation()
         self.norm_data = np.sqrt(np.sum(self.GreeDS_frame**2))
         self.X = [self.xd,self.xp]
         self.S = [self.L[0](self.xd),self.L[1](self.xp)]
