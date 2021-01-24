@@ -25,7 +25,7 @@ import json
 import sys
 import os
 
-from vip.metrics.stim import compute_stim_map 
+from vip_hci.metrics.stim import compute_stim_map 
 from hciplot import plot_frames as plots
 
 import mayo_hci
