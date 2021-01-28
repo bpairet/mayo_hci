@@ -130,7 +130,7 @@ def compute_cube_frame_conv_only_planet_grad_pytorch(xp,xl,matrix,angles,compute
 
 
 
-def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,rotation_matrices,compute_loss,psf,mask):
+def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,pa_rotate_matrix,compute_loss,psf,mask):
     t,_ = matrix.shape
     xs = xd + xp
     n,_ = xs.shape
@@ -140,11 +140,11 @@ def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,rotation_matrices,compu
     torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
     torch_xs = torch.tensor(xs,requires_grad=True)
     
-    rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n))#.squeeze(1)
+    rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), pa_rotate_matrix, dsize=(n,n))#.squeeze(1)
     conv_rotated_xs = kornia.filters.filter2D(rotated_xs,torch_psf).squeeze(1)
     loss = compute_loss(conv_rotated_xs + torch_L- torch_data)
     
-    #rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1)
+    #rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), pa_rotate_matrix, dsize=(n,n)).squeeze(1)
     #loss = compute_loss(rotated_xs + torch_L- torch_data)
 
     loss.backward()
@@ -156,7 +156,7 @@ def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,rotation_matrices,compu
     grad_d_p = np_grad_xs*mask
     return grad_d_p, grad_d_p, np_grad_L.reshape(t,n*n), loss.detach().numpy()
 
-def compute_rotatedSpeckles_conv_grad_pytorch(xd,xp,xl,rotated_data,inv_rotation_matrices,compute_loss,kernel,mask):
+def compute_rotatedSpeckles_conv_grad_pytorch(xd,xp,xl,rotated_data,pa_derotate_matrix,compute_loss,kernel,mask):
     t,n,_ = rotated_data.shape
     xs = xd + xp
     
@@ -165,11 +165,11 @@ def compute_rotatedSpeckles_conv_grad_pytorch(xd,xp,xl,rotated_data,inv_rotation
     torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
     torch_conv_xs = torch.tensor(A(xs,kernel),requires_grad=True)
     
-    rotated_L = kornia.warp_affine(torch_L.unsqueeze(1).float(), inv_rotation_matrices, dsize=(n,n)).squeeze(1)
+    rotated_L = kornia.warp_affine(torch_L.unsqueeze(1).float(), pa_derotate_matrix, dsize=(n,n)).squeeze(1)
     #conv_xs = kornia.filters.filter2D(torch_xs.unsqueeze(0).unsqueeze(0),torch_psf).squeeze(0).squeeze(0)
     loss = compute_loss(torch_conv_xs + rotated_L - torch_rotated_data)
     
-    #rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1)
+    #rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), pa_rotate_matrix, dsize=(n,n)).squeeze(1)
     #loss = compute_loss(rotated_xs + torch_L- torch_data)
 
     loss.backward()
@@ -294,7 +294,7 @@ def grad_MCA_pytorch(xd,xp,noisy_disk_planet,compute_loss,conv_op,adj_conv_op,ma
     return  grad_xs, grad_xs, loss.detach().numpy()
 
 
-def compute_cube_frame_grad_pytorch_no_regul(xs,xl,matrix,rotation_matrices,compute_loss, mask):
+def compute_cube_frame_grad_pytorch_no_regul(xs,xl,matrix,pa_rotate_matrix,compute_loss, mask):
     t,_ = matrix.shape
     n,_ = xs.shape
 
@@ -302,7 +302,7 @@ def compute_cube_frame_grad_pytorch_no_regul(xs,xl,matrix,rotation_matrices,comp
     torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
     torch_xs = torch.tensor(xs,requires_grad=True)
 
-    rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1)
+    rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), pa_rotate_matrix, dsize=(n,n)).squeeze(1)
     loss = compute_loss(rotated_xs + torch_L - torch_data)
     
     loss.backward()
@@ -314,10 +314,10 @@ def compute_cube_frame_grad_pytorch_no_regul(xs,xl,matrix,rotation_matrices,comp
     return np_grad_xs*mask, np_grad_L.reshape(t,n*n), loss.detach().numpy()
 
 
-def cube_rotate_kornia(cube,rotation_matrices):
+def cube_rotate_kornia(cube,pa_rotate_matrix):
     t,n,_ = cube.shape
     torch_cube = torch.tensor(cube,requires_grad=False).expand(t,n,n).unsqueeze(1).float()
-    return kornia.warp_affine(torch_cube, rotation_matrices, dsize=(n,n)).squeeze(1).detach().numpy()
+    return kornia.warp_affine(torch_cube, pa_rotate_matrix, dsize=(n,n)).squeeze(1).detach().numpy()
     
 def get_all_rotation_matrices(angles,center_image,dtype):
     center: torch.tensor = torch.ones(1, 2)
@@ -363,7 +363,7 @@ def get_huber_parameters(algo):
     Low_rank_xl = (U_L0 @ U_L0.T @ algo.xl.reshape(t,n*n) ).reshape(t,n,n)
     cube_xs = np.zeros((algo.t,algo.n,algo.n))
     cube_xs[:,:,:] = algo.GreeDS_frame 
-    cube_xs = cube_rotate_kornia(cube_xs,algo.rotation_matrices)
+    cube_xs = cube_rotate_kornia(cube_xs,algo.pa_rotate_matrix)
     error = algo.data - Low_rank_xl - cube_xs
 
     sigma_by_annulus = np.ones((n,n))

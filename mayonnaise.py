@@ -102,13 +102,13 @@ class mayonnaise_pipeline(object):
         self.center_image, self.mask = get_rotation_center_and_mask(self.n,self.parameters_algo['mask_center'],self.center_image)
         dtype = torch.FloatTensor # todo : check how to deal with this
                 # Define the rotation matrices:
-        self.rotation_matrices = get_all_rotation_matrices(self.angles,self.center_image,dtype)
-        self.inv_rotation_matrices = get_all_rotation_matrices(-self.angles,self.center_image,dtype)
+        self.pa_rotate_matrix = get_all_rotation_matrices(self.angles,self.center_image,dtype)
+        self.pa_derotate_matrix = get_all_rotation_matrices(-self.angles,self.center_image,dtype)
         #check if there is any synthetic data to add (only used to create synthetic data to test mayo)
         try:
             with open(self.working_dir+'add_synthetic_signal.json', 'r') as read_file_add_synthetic_signal:
                 add_synthetic_signal = json.load(read_file_add_synthetic_signal)
-                self.data,self.synthetic_disc_planet = create_synthetic_data_with_disk_planet(self.data,self.rotation_matrices,self.kernel,add_synthetic_signal)
+                self.data,self.synthetic_disc_planet = create_synthetic_data_with_disk_planet(self.data,self.pa_rotate_matrix,self.kernel,add_synthetic_signal)
                 print('Synthetic signal added to data')
         except FileNotFoundError:
             pass
@@ -355,7 +355,7 @@ class mod_mayonnaise_pipeline(mayonnaise_pipeline):
         self.U_grad = bar_U_L0*U_grad_factor
         self.U_L0 = bar_U_L0/(np.sqrt( np.sum( (bar_U_L0)**2)) * self.parameters_algo['rank']**2) # this is to make the semi-positiveness of M indepedant of the rank used
         l_init = 1./U_grad_factor*(self.Sigma_L0[:,None]*self.V_L0).reshape(self.parameters_algo['rank'],self.n*self.n)
-        self.S_der = mayo_hci.cube_rotate_kornia(self.data - np.dot(self.U_grad,l_init).reshape(self.t,self.n,self.n),self.inv_rotation_matrices)
+        self.S_der = mayo_hci.cube_rotate_kornia(self.data - np.dot(self.U_grad,l_init).reshape(self.t,self.n,self.n),self.pa_derotate_matrix)
         self.xd = np.median(self.S_der,axis=0)*self.mask
         self.xd *= self.xd>0
         self.xp = np.zeros((self.n,self.n))
@@ -396,7 +396,7 @@ class all_ADI_sequence_mayonnaise_pipeline(mayonnaise_pipeline):
         super(all_ADI_sequence_mayonnaise_pipeline, self).mayonnaise_pipeline_initialisation()
         self.U_L0,_,_ = randomized_svd(self.xl.reshape(self.t,self.n*self.n), n_components=self.parameters_algo['rank'], n_iter=5,transpose='auto')
         Low_rank_xl = (self.U_L0 @ self.U_L0.T @ self.xl.reshape(self.t,self.n*self.n) ).reshape(self.t,self.n,self.n)
-        self.S_der = mayo_hci.cube_rotate_kornia(self.data - Low_rank_xl,self.inv_rotation_matrices)
+        self.S_der = mayo_hci.cube_rotate_kornia(self.data - Low_rank_xl,self.pa_derotate_matrix)
         self.xd = np.median(self.S_der,axis=0)*self.mask
         self.xd *= self.xd>0
         self.xp = np.zeros((self.n,self.n))
@@ -407,7 +407,7 @@ class all_ADI_sequence_mayonnaise_pipeline(mayonnaise_pipeline):
     def define_optimization_function(self):
         super(all_ADI_sequence_mayonnaise_pipeline, self).define_optimization_function()
         self.n_variables = 3
-        self.compute_grad = lambda : compute_cube_frame_conv_grad_pytorch(self.X[0],self.X[1],self.X[2],matrix=self.matrix,rotation_matrices=self.rotation_matrices,
+        self.compute_grad = lambda : compute_cube_frame_conv_grad_pytorch(self.X[0],self.X[1],self.X[2],matrix=self.matrix,pa_rotate_matrix=self.pa_rotate_matrix,
                                                     compute_loss=self.compute_loss,
                                                     psf=self.psf,
                                                     mask=self.mask)
@@ -479,7 +479,7 @@ class all_ADI_sequence_mayonnaise_pipeline_no_regul(mayonnaise_pipeline):
     def define_optimization_function(self):
         super(all_ADI_sequence_mayonnaise_pipeline_no_regul, self).define_optimization_function()
         self.n_variables = 2
-        self.compute_grad = lambda : compute_cube_frame_grad_pytorch_no_regul(self.X[0],self.X[1],matrix=self.matrix,rotation_matrices=self.rotation_matrices,
+        self.compute_grad = lambda : compute_cube_frame_grad_pytorch_no_regul(self.X[0],self.X[1],matrix=self.matrix,pa_rotate_matrix=self.pa_rotate_matrix,
                                                                 compute_loss=self.compute_loss,
                                                                 mask=self.mask)
         self.proj_L_constraint = lambda x :self.U_L0 @ self.U_L0.T @ x

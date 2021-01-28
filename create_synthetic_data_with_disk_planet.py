@@ -24,7 +24,7 @@ import mayo_hci
 import torch
 import kornia
 
-def create_synthetic_data_with_disk_planet(empty_data, rotation_matrices, kernel, add_synthetic_signal):
+def create_synthetic_data_with_disk_planet(empty_data, pa_rotate_matrix, kernel, add_synthetic_signal):
     """
     automatic_load_data(data_name,channel=0,dir='default',RDI=False,quick_look=0,crop=0,center_im=None)
         loads ADI datasets automatically 
@@ -91,7 +91,7 @@ def create_synthetic_data_with_disk_planet(empty_data, rotation_matrices, kernel
     cube_disk = np.zeros((t,n,n))
     torch_disk = torch.tensor(disk,requires_grad=False)
 
-    rotated_disk = kornia.warp_affine(torch_disk.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1).detach().numpy()
+    rotated_disk = kornia.warp_affine(torch_disk.expand(t,n,n).unsqueeze(1).float(), pa_rotate_matrix, dsize=(n,n)).squeeze(1).detach().numpy()
 
     for k in range(t):
         rotated_disk[k,:,:] = mayo_hci.A(rotated_disk[k,:,:],kernel)
