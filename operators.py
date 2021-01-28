@@ -128,57 +128,57 @@ def compute_cube_frame_conv_only_planet_grad_pytorch(xp,xl,matrix,angles,compute
     grad_d_p, _, np_grad_L, loss = compute_cube_frame_conv_grad_pytorch(xp,xp*0,xl,matrix,angles,compute_loss,kernel,mask, center_image)
     return grad_d_p, np_grad_L, loss
 
-def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss,kernel,mask, center_image):
+
+
+def compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,rotation_matrices,compute_loss,psf,mask):
     t,_ = matrix.shape
     xs = xd + xp
     n,_ = xs.shape
-    conv_op = lambda x : A(x,kernel)
-    adj_conv_op = lambda x : A_(x,kernel)
-    if t != angles.shape[0]:
-        print('ANGLES do not have t elements!')
     
-    class FFTconv_numpy_torch(torch.autograd.Function):
-        @staticmethod
-        def forward(ctx, input):
-            numpy_input = input.detach().numpy()
-            result = conv_op(numpy_input)
-            return input.new(result)
-        @staticmethod
-        def backward(ctx, grad_output):
-            numpy_go = grad_output.numpy()
-            result = adj_conv_op(numpy_go)
-            return grad_output.new(result)
-    def fft_conv_np_torch(input):
-        return FFTconv_numpy_torch.apply(input)
-
-    # needed for rotation:
-    center: torch.tensor = torch.ones(1, 2)
-    center[..., 0] = center_image[0] # x
-    center[..., 1] = center_image[1] # y
-    scale: torch.tensor = torch.ones(1)
-
-    torch_xs = torch.tensor([[xs]],requires_grad=True)
-
-
-    torch_data = torch.tensor(matrix.reshape(t,n,n))
+    torch_data = torch.tensor(matrix.reshape(t,n,n),requires_grad=False)
+    torch_psf = torch.tensor([psf],requires_grad=False)
     torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
+    torch_xs = torch.tensor(xs,requires_grad=True)
     
+    rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n))#.squeeze(1)
+    conv_rotated_xs = kornia.filters.filter2D(rotated_xs,torch_psf).squeeze(1)
+    loss = compute_loss(conv_rotated_xs + torch_L- torch_data)
+    
+    #rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1)
+    #loss = compute_loss(rotated_xs + torch_L- torch_data)
 
-    loss : torch.tensor = torch.zeros(1,requires_grad=True)
-
-    for k in range(t):
-        angle: torch.tensor = torch.ones(1) * (angles[k])
-        M: torch.tensor = kornia.get_rotation_matrix2d(center, angle, scale)
-        rotated_xs = kornia.warp_affine(torch_xs.float(), M, dsize=(n,n))
-        loss = loss + compute_loss( fft_conv_np_torch(rotated_xs[0,0,:,:]) + torch_L[k,:,:] - torch_data[k,:,:]) 
     loss.backward()
     torch_grad_xs = torch_xs.grad
     torch_grad_L = torch_L.grad
 
-
-    np_grad_xs = torch_grad_xs[0,0,:,:].detach().numpy()
+    np_grad_xs = torch_grad_xs.detach().numpy()
     np_grad_L = torch_grad_L.detach().numpy()
     grad_d_p = np_grad_xs*mask
+    return grad_d_p, grad_d_p, np_grad_L.reshape(t,n*n), loss.detach().numpy()
+
+def compute_rotatedSpeckles_conv_grad_pytorch(xd,xp,xl,rotated_data,inv_rotation_matrices,compute_loss,kernel,mask):
+    t,n,_ = rotated_data.shape
+    xs = xd + xp
+    
+    torch_rotated_data = torch.tensor(rotated_data,requires_grad=False)
+    #torch_psf = torch.tensor([psf],requires_grad=False)
+    torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
+    torch_conv_xs = torch.tensor(A(xs,kernel),requires_grad=True)
+    
+    rotated_L = kornia.warp_affine(torch_L.unsqueeze(1).float(), inv_rotation_matrices, dsize=(n,n)).squeeze(1)
+    #conv_xs = kornia.filters.filter2D(torch_xs.unsqueeze(0).unsqueeze(0),torch_psf).squeeze(0).squeeze(0)
+    loss = compute_loss(torch_conv_xs + rotated_L - torch_rotated_data)
+    
+    #rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1)
+    #loss = compute_loss(rotated_xs + torch_L- torch_data)
+
+    loss.backward()
+    torch_grad_xs = torch_conv_xs.grad
+    torch_grad_L = torch_L.grad
+
+    np_grad_xs = torch_grad_xs.detach().numpy()
+    np_grad_L = torch_grad_L.detach().numpy()
+    grad_d_p = A_(np_grad_xs,kernel)*mask
     return grad_d_p, grad_d_p, np_grad_L.reshape(t,n*n), loss.detach().numpy()
 
 
@@ -218,7 +218,7 @@ def mod_compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss
     center: torch.tensor = torch.ones(1, 2)
     center[..., 0] = center_image[0] # x
     center[..., 1] = center_image[1] # y
-    scale: torch.tensor = torch.ones(1)
+    scale: torch.tensor = torch.ones(1,2)
 
     torch_xs = torch.tensor([[xs]],requires_grad=True)
 
@@ -294,56 +294,44 @@ def grad_MCA_pytorch(xd,xp,noisy_disk_planet,compute_loss,conv_op,adj_conv_op,ma
     return  grad_xs, grad_xs, loss.detach().numpy()
 
 
-def compute_cube_frame_grad_pytorch_no_regul(xs,xl,matrix,angles,compute_loss, mask, center_image):
+def compute_cube_frame_grad_pytorch_no_regul(xs,xl,matrix,rotation_matrices,compute_loss, mask):
     t,_ = matrix.shape
     n,_ = xs.shape
 
-
-    # needed for rotation:
-    center: torch.tensor = torch.ones(1, 2)
-    center[..., 0] = center_image[0] # x
-    center[..., 1] = center_image[1] # y
-    scale: torch.tensor = torch.ones(1)
-
-    torch_xs = torch.tensor([[xs]],requires_grad=True)
-
     torch_data = torch.tensor(matrix.reshape(t,n,n))
     torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
+    torch_xs = torch.tensor(xs,requires_grad=True)
 
-    loss : torch.tensor = torch.zeros(1,requires_grad=True)
-
-    for k in range(t):
-        angle: torch.tensor = torch.ones(1) * (angles[k])
-        M: torch.tensor = kornia.get_rotation_matrix2d(center, angle, scale)
-        rotated_xs = kornia.warp_affine(torch_xs.float(), M, dsize=(n,n))
-        loss = loss + compute_loss( (rotated_xs[0,0,:,:]) + torch_L[k,:,:] - torch_data[k,:,:]) 
+    rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1)
+    loss = compute_loss(rotated_xs + torch_L - torch_data)
+    
     loss.backward()
     torch_grad_xs = torch_xs.grad
     torch_grad_L = torch_L.grad
 
-    np_grad_xs = torch_grad_xs[0,0,:,:].detach().numpy()
+    np_grad_xs = torch_grad_xs[:,:].detach().numpy()
     np_grad_L = torch_grad_L.detach().numpy()*mask
     return np_grad_xs*mask, np_grad_L.reshape(t,n*n), loss.detach().numpy()
 
 
-def cube_rotate_kornia(cube,angles,center_image):
+def cube_rotate_kornia(cube,rotation_matrices):
     t,n,_ = cube.shape
-    if t != angles.shape[0]:
-        print('ANGLES do not have t elements!')
+    torch_cube = torch.tensor(cube,requires_grad=False).expand(t,n,n).unsqueeze(1).float()
+    return kornia.warp_affine(torch_cube, rotation_matrices, dsize=(n,n)).squeeze(1).detach().numpy()
+    
+def get_all_rotation_matrices(angles,center_image,dtype):
     center: torch.tensor = torch.ones(1, 2)
     center[..., 0] = center_image[0] # x
     center[..., 1] = center_image[1] # y
-    scale: torch.tensor = torch.ones(1)
-
-    cube_rotated = np.zeros((t,n,n))
-
-    for k in range(t):
-        torch_xs = torch.tensor([[cube[k,:,:]]],requires_grad=False)
-        angle: torch.tensor = torch.ones(1) * (angles[k])
-        M: torch.tensor = kornia.get_rotation_matrix2d(center, angle, scale)
-        cube_rotated[k,:,:] = kornia.warp_affine(torch_xs.float(), M, dsize=(n,n)).numpy()
-    return cube_rotated
-
+    scale: torch.tensor = torch.ones(1,2)
+    t, = angles.shape
+    list_rot_mat = torch.zeros((t,2, 3)).type(dtype)
+    for i in range(t):
+        theta = torch.ones(1) * (angles[i])
+        #alpha = torch.cos(theta)
+        #beta = torch.sin(theta)
+        list_rot_mat[i,:,:] = kornia.get_rotation_matrix2d(center, theta, scale)
+    return list_rot_mat
 
 def get_rotation_center_and_mask(n,corono_radius,center_coord):
     if center_coord:
@@ -375,7 +363,7 @@ def get_huber_parameters(algo):
     Low_rank_xl = (U_L0 @ U_L0.T @ algo.xl.reshape(t,n*n) ).reshape(t,n,n)
     cube_xs = np.zeros((algo.t,algo.n,algo.n))
     cube_xs[:,:,:] = algo.GreeDS_frame 
-    cube_xs = cube_rotate_kornia(cube_xs,algo.angles,algo.center_image)
+    cube_xs = cube_rotate_kornia(cube_xs,algo.rotation_matrices)
     error = algo.data - Low_rank_xl - cube_xs
 
     sigma_by_annulus = np.ones((n,n))

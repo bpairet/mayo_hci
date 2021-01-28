@@ -18,6 +18,7 @@ adaptive contstraints
     GNU General Public License for more details.
 '''
 
+'''
 import pick
 
 import numpy as np
@@ -174,3 +175,4 @@ def ask_what_to_do_only_planet(list_constraint_planet,current_saving_dir):
         number = float(input('please select the new number of disk regularization:  \n current list_constraint_planet is '+str(list_constraint_planet))    )
         list_constraint_planet = np.linspace(lower,upper,number)
     return is_return, list_constraint_planet
+'''

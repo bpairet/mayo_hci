@@ -44,7 +44,7 @@ def GreeDS(algo):
     print('      mask_radius = ' + str(algo.parameters_algo['greedy_mask']))
     print('      n_iter_in_rank = ' + str(algo.parameters_algo['greedy_n_iter_in_rank']))
     print('--------------------------------------------------------')
-
+    print('VIP rotation')
     t,n,_ = algo.data.shape
     x_k = np.zeros((n,n))
     iter_frames = np.zeros([algo.parameters_algo['greedy_n_iter'],n,n])
@@ -87,11 +87,11 @@ def f_GreeDS(x,algo,ncomp):
     X = np.zeros((t,n,n))
     X[:,:,:] = x
 
-    R = algo.data - mayo_hci.cube_rotate_kornia(X,algo.angles,algo.center_image)
+    R = algo.data - mayo_hci.cube_rotate_kornia(X,algo.rotation_matrices)
     U, S, V = np.linalg.svd(R.reshape(t,n*n), full_matrices=False)
     L = np.dot(U[:,:ncomp],np.dot(np.diag(S[:ncomp]),V[:ncomp,:])).reshape(t,n,n)
     S = algo.data - L
-    S_der = mayo_hci.cube_rotate_kornia(S,-algo.angles,algo.center_image)
+    S_der = mayo_hci.cube_rotate_kornia(S,algo.inv_rotation_matrices)
     frame = np.mean(S_der,axis=0)*algo.mask
     frame *= frame>0
     return frame, L

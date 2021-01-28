@@ -24,7 +24,7 @@ import mayo_hci
 import torch
 import kornia
 
-def create_synthetic_data_with_disk_planet(empty_data,angles,psf,add_synthetic_signal):
+def create_synthetic_data_with_disk_planet(empty_data, rotation_matrices, kernel, add_synthetic_signal):
     """
     automatic_load_data(data_name,channel=0,dir='default',RDI=False,quick_look=0,crop=0,center_im=None)
         loads ADI datasets automatically 
@@ -63,7 +63,6 @@ def create_synthetic_data_with_disk_planet(empty_data,angles,psf,add_synthetic_s
     if 'disk_intensity_thresh' not in add_synthetic_signal:
         add_synthetic_signal['disk_intensity_thresh'] = 60
     t,n,_ = empty_data.shape
-    kernel = np.fft.fft2(np.fft.fftshift(psf))
     
     # 
     # Disk injection
@@ -90,19 +89,11 @@ def create_synthetic_data_with_disk_planet(empty_data,angles,psf,add_synthetic_s
             planet[xx,yy] = intensity
         disk += planet
     cube_disk = np.zeros((t,n,n))
+    torch_disk = torch.tensor(disk,requires_grad=False)
 
-    center: torch.tensor = torch.ones(1, 2)
-    center[..., 0] = n / 2  # x
-    center[..., 1] = n / 2  # yd
-    scale: torch.tensor = torch.ones(1)
-
-    torch_disk = torch.tensor([[disk]],requires_grad=False)
+    rotated_disk = kornia.warp_affine(torch_disk.expand(t,n,n).unsqueeze(1).float(), rotation_matrices, dsize=(n,n)).squeeze(1).detach().numpy()
 
     for k in range(t):
-        angle: torch.tensor = torch.ones(1) * (angles[k])
-        M: torch.tensor = kornia.get_rotation_matrix2d(center, angle, scale)
-        rotated_disk = kornia.warp_affine(torch_disk.float(), M, dsize=(n,n))
-        cube_disk[k,:,:] = mayo_hci.A(rotated_disk[0,0,:,:].numpy(),kernel)
-
-    data = empty_data + cube_disk
+        rotated_disk[k,:,:] = mayo_hci.A(rotated_disk[k,:,:],kernel)
+    data = empty_data + rotated_disk
     return data, disk
