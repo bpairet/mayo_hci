@@ -13,27 +13,25 @@ automatic_load_data deals with loading ADI data
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  Sfee the
     GNU General Public License for more details.
 '''
 
 
-import vip_hci as vip
-import numpy as np
+import torch
+
 
 import json
 import sys
 import os
 
-from vip_hci.metrics.stim import compute_stim_map 
-from hciplot import plot_frames as plots
 
 import mayo_hci
 
 
-def automatic_load_data(data_name,channel=0,dir='default',quick_look=0,crop=0,center_im=None):
+def automatic_load_data(data_name,device,channel=0,data_dir='default',crop=0):
     """
-    automatic_load_data(data_name,channel=0,dir='default',RDI=False,quick_look=0,crop=0,center_im=None)
+    automatic_load_data(data_name,channel=0,data_dir='default',RDI=False,quick_look=0,crop=0,center_im=None)
         loads ADI datasets automatically 
     Parameters
     ----------
@@ -41,12 +39,8 @@ def automatic_load_data(data_name,channel=0,dir='default',quick_look=0,crop=0,ce
         name of the data to use in MAYO
     channel : int
         channel to use if multiple channels, default is 0
-    quick_look : int
-        if larger than 0, apply PCA-SFS and STIM with quick_look number of PC's
     crop : int
         if crop > 0, crops the ADI cube to the desired width, default is 0
-    center_im : tuple
-        (x,y), center of the frame
     
     Returns
     -------
@@ -56,41 +50,42 @@ def automatic_load_data(data_name,channel=0,dir='default',quick_look=0,crop=0,ce
         list of angles
     psf :  numpy array
         n x n psf
-    
-    if quick_look >0 : 
-    frame :  numpy array
-        n x n, PCA-SFS processed frame
-    stim_frame :  numpy array
-        n x n, PCA-SFS STIM map    
+    center_im : tuple
+        (x,y), center of the frame    
     """ 
-    if dir == 'default':
+    if data_dir == 'default':
         try:
             with open(os.path.dirname(mayo_hci.__file__) + '/data_path.json', 'r') as read_data_path:
                 temp = json.load(read_data_path)
-                dir = temp['default_path_to_data']
+                data_dir = temp['default_path_to_data']
         except FileNotFoundError:
-            dir = './'
-    with open(dir+data_name+'/0_import_info.json', 'r') as read_file_import_info:
+            data_dir = './'
+    with open(data_dir+data_name+'/0_import_info.json', 'r') as read_file_import_info:
         import_info = json.load(read_file_import_info)
-    
+    center = import_info['center_image']
     if import_info['cube']:
-        data = vip.fits.open_fits(dir+data_name+'/'+import_info['cube'][channel]['location'])
+        data = mayo_hci.open_fits(data_dir+data_name+'/'+import_info['cube'][channel]['location'],device)
         if len(data.shape) == 4:
             data = data[channel,:,:,:]
         t,n_init,_ = data.shape
         if crop:
             if n_init > crop:
-                data = vip.preproc.cosmetics.cube_crop_frames(data, crop, xy=(n_init//2+1,n_init//2+1),force=True)
+                n = crop
+                data = data[:,int(center[0])-n//2:int(center[0])+n//2,int(center[1])-n//2:int(center[1])+n//2]
+                center_im = (n//2 + (center[0]-int(center[0])),n//2 + (center[1]-int(center[1])))
             else:
                 print('crop is larger than initial image, no cropped performed')
-        _,n,_ = data.shape
+                _,n,_ = data.shape
+        else:
+            n = n_init
+            center_im = center
         print('imported cube on channel: ' + import_info['cube'][channel]['channel_name'])
     else:
         cube = None
         print('data entry missing in import info')
 
     if import_info['angles']:
-        angles = vip.fits.open_fits(dir+data_name+'/'+import_info['angles'][channel]['location'])
+        angles = mayo_hci.open_fits(data_dir+data_name+'/'+import_info['angles'][channel]['location'],device)
         if len(angles.shape) == 2:
             angles = angles[channel,:]
         angles = angles*import_info['angles_multiply']
@@ -99,9 +94,9 @@ def automatic_load_data(data_name,channel=0,dir='default',quick_look=0,crop=0,ce
     else:
         angles = None
         print('angles entry missing in import info')
-
+            
     if import_info['psf']:
-        psf = vip.fits.open_fits(dir+data_name+'/'+import_info['psf'][channel]['location'])
+        psf = mayo_hci.open_fits(data_dir+data_name+'/'+import_info['psf'][channel]['location'],device)
         if len(psf.shape) == 4:
             try:
                 psf = psf[channel,import_info['psf']['which_psf'],:,:]
@@ -109,30 +104,25 @@ def automatic_load_data(data_name,channel=0,dir='default',quick_look=0,crop=0,ce
                 psf = psf[channel,0,:,:]
         elif len(psf.shape) == 3:
             psf = psf[channel,:,:]
-        print(psf.shape)
         n_psf,_ = psf.shape
-        print(psf.shape)
+        if n_psf != n_init:
+            print('Warning, size of psf is not the same as data')
         psf = psf*(psf>0)
-        #psf -= np.min(psf)
         if n_psf < n:
-            print('dimension of psf modified to fit data')
-            psf_width = psf.shape[0]
-            ind_inf = int(n/2-psf_width/2)
-            ind_sup = int(n/2+psf_width/2)
-            psf_full = np.zeros((n,n))
-            psf_full[ind_inf:ind_sup,ind_inf:ind_sup] = psf
+            psf_full = torch.zeros(n,n,device=device)
+            if n_psf % 2==0:
+                psf_full[n//2-n_psf//2:n//2+n_psf//2,n//2-n_psf//2:n//2+n_psf//2] = psf
+            else:
+                psf_full[n//2-n_psf//2:n//2+n_psf//2+1,n//2-n_psf//2:n//2+n_psf//2+1] = psf
             psf = psf_full
         if n_psf > n:
-            psf = vip.preproc.cosmetics.frame_crop(psf, n,force=True)
-        psf = psf/np.sum(np.abs(psf))
+            psf = psf[n_psf//2-n//2:n_psf//2+n//2,n_psf//2-n//2:n_psf//2+n//2]
+        psf = psf/torch.abs(psf).sum()
         print('psf normalized')
     else:
         psf = None
         print('psf entry missing in import info')
-    if quick_look:
-        frame, _, _, residuals_cube, _ = vip.pca.pca_fullfr.pca(data,angles,ncomp=quick_look,full_output=True)
-        stim_frame = compute_stim_map(vip.preproc.cube_derotate(residuals_cube,angles)) 
-        plots((frame,stim_frame))
-        return data,angles,psf,frame,stim_frame
-    else:
-        return data,angles,psf
+    if data.max()<0.1:
+        data *= 10**4
+        print('data assumed in contrast units, multiplied by 10**4')
+    return data,angles,psf,center_im

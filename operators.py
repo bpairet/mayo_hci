@@ -28,7 +28,7 @@ import pyshearlab
 import pywt
 
 from sklearn.decomposition import randomized_svd
-from simplex_projection import euclidean_proj_l1ball
+from simplex_projection_pytorch import euclidean_proj_l1ball
 
 
 
@@ -38,11 +38,20 @@ def A(f,K):
 def A_(f,K):
     return np.real(np.fft.ifft2(np.fft.fft2(f) * np.ma.conjugate(K)))
 
+def A_pytorch(f,K):
+    return torch.real(torch.fft.ifft2(torch.fft.fft2(f)*K))
+
+def A_adj_pytorch(f,K):
+    return torch.real(torch.fft.ifft2(torch.fft.fft2(f) * torch.conj(K)))
+
+
 def soft_thresh(U,param):
-    return (np.abs(U)>param)*(U-sign(U)*param)
+    return (torch.abs(U)>param)*(U-sign(U)*param)
 
 def sign(U):
     return 1*(U>0) - 1*(U<0)
+
+
 
 
 
@@ -98,9 +107,9 @@ def shearlet_frame_thresh(frame,fraction_coeff):
     return frame_T
 
 
-def positivity_mask_center(array,r_mask):
-    n,_ = array.shape
-    return positivity(vip.var.get_circle(vip.var.mask_circle(array,r_mask),n/2))
+#def positivity_mask_center(array,r_mask):
+#    n,_ = array.shape
+#    return positivity(vip.var.get_circle(vip.var.mask_circle(array,r_mask),n/2))
 
 def positivity(array):
     return array*(array>0)
@@ -160,26 +169,23 @@ def compute_rotatedSpeckles_conv_grad_pytorch(xd,xp,xl,rotated_data,pa_derotate_
     t,n,_ = rotated_data.shape
     xs = xd + xp
     
-    torch_rotated_data = torch.tensor(rotated_data,requires_grad=False)
-    #torch_psf = torch.tensor([psf],requires_grad=False)
-    torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
-    torch_conv_xs = torch.tensor(A(xs,kernel),requires_grad=True)
+    rotated_data.requires_grad=False
+    kernel.requires_grad=False
+    L = xl.view(t,n,n)
+    L.requires_grad = True
+    xs.requires_grad = True
     
-    rotated_L = kornia.warp_affine(torch_L.unsqueeze(1).float(), pa_derotate_matrix, dsize=(n,n)).squeeze(1)
-    #conv_xs = kornia.filters.filter2D(torch_xs.unsqueeze(0).unsqueeze(0),torch_psf).squeeze(0).squeeze(0)
-    loss = compute_loss(torch_conv_xs + rotated_L - torch_rotated_data)
-    
-    #rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), pa_rotate_matrix, dsize=(n,n)).squeeze(1)
-    #loss = compute_loss(rotated_xs + torch_L- torch_data)
+    conv_xs = A_pytorch(xs,kernel)
+    #conv_xs.requires_grad = True
+    rotated_L = kornia.warp_affine(L.unsqueeze(1).float(), pa_derotate_matrix, dsize=(n,n)).squeeze(1)
+    loss = compute_loss(conv_xs + rotated_L - rotated_data)
 
     loss.backward()
-    torch_grad_xs = torch_conv_xs.grad
-    torch_grad_L = torch_L.grad
-
-    np_grad_xs = torch_grad_xs.detach().numpy()
-    np_grad_L = torch_grad_L.detach().numpy()
-    grad_d_p = A_(np_grad_xs,kernel)*mask
-    return grad_d_p, grad_d_p, np_grad_L.reshape(t,n*n), loss.detach().numpy()
+    grad_xs = xs.grad
+    grad_L = L.grad
+    #grad_d_p = A_adj_pytorch(grad_xs,kernel)*mask
+    grad_d_p = grad_xs*mask
+    return grad_d_p, grad_d_p, (grad_L*mask).view(t,n*n), loss.detach().item()
 
 
 def mod_compute_cube_frame_conv_grad_pytorch(xd,xp,xl,matrix,angles,compute_loss,kernel,mask, center_image, U_L0, stochastic):
@@ -294,57 +300,121 @@ def grad_MCA_pytorch(xd,xp,noisy_disk_planet,compute_loss,conv_op,adj_conv_op,ma
     return  grad_xs, grad_xs, loss.detach().numpy()
 
 
-def compute_cube_frame_grad_pytorch_no_regul(xs,xl,matrix,pa_rotate_matrix,compute_loss, mask):
-    t,_ = matrix.shape
-    n,_ = xs.shape
+def compute_cube_frame_grad_pytorch_no_regul(xs,xl,data,pa_rotate_matrix,compute_loss, mask):
+    t,n,_ = data.shape
 
-    torch_data = torch.tensor(matrix.reshape(t,n,n))
-    torch_L = torch.tensor(xl.reshape(t,n,n),requires_grad=True)
-    torch_xs = torch.tensor(xs,requires_grad=True)
-
+    data.requires_grad = False
+    L = xl.view(t,n,n)
+    L.requires_grad = True
+    torch_xs = xs.view(n,n)
+    torch_xs.requires_grad = True
+    
     rotated_xs = kornia.warp_affine(torch_xs.expand(t,n,n).unsqueeze(1).float(), pa_rotate_matrix, dsize=(n,n)).squeeze(1)
-    loss = compute_loss(rotated_xs + torch_L - torch_data)
+    loss = compute_loss(rotated_xs + L - data)
     
     loss.backward()
-    torch_grad_xs = torch_xs.grad
-    torch_grad_L = torch_L.grad
+    grad_xs = torch_xs.grad
+    grad_L = L.grad
+    return grad_xs.detach()*mask, (grad_L.detach()).reshape(t,n*n), loss
 
-    np_grad_xs = torch_grad_xs[:,:].detach().numpy()
-    np_grad_L = torch_grad_L.detach().numpy()*mask
-    return np_grad_xs*mask, np_grad_L.reshape(t,n*n), loss.detach().numpy()
+
+def get_dilatation_matrix(scale,center_im):
+    scale_x = scale
+    scale_y = scale
+
+    M = torch.tensor([[scale_x, 0, (1. - scale_x) * center_im[0]],
+                  [0, scale_y, (1. - scale_y) * center_im[1]]])
+    return M
+
+def scale_cube(cube,M):
+    outshape = cube.shape[1], cube.shape[2] 
+    return kornia.warp_affine(cube.unsqueeze(0),M.unsqueeze(0),outshape).squeeze()
+
+
+def compute_spicy_mayo_rotatedSpeckles_grad(xd,xp,xl,rotated_data,pa_derotate_matrix,dilatation_matrix,compute_loss,kernel,mask):
+    _,t,n,_ = rotated_data.shape
+    xs = xp + xd
+    
+    rotated_data.requires_grad=False
+    kernel.requires_grad=False
+    L = xl.view(t,n,n)
+    L.requires_grad = True
+    L.grad=None
+    xs.requires_grad = True
+    
+    conv_xs_0 = A_pytorch(xs,kernel[0])
+    conv_xs_1 = A_pytorch(xs,kernel[1])
+    #conv_xs_0 = xs
+    #conv_xs_1 = xs
+
+    rotated_L = kornia.warp_affine(L.unsqueeze(1).float(), pa_derotate_matrix, dsize=(n,n)).squeeze(1)
+    loss = compute_loss(conv_xs_0 + rotated_L - rotated_data[0]) + compute_loss(conv_xs_1 + scale_cube(rotated_L,dilatation_matrix) - rotated_data[1])
+    
+    loss.backward()
+    grad_xs = xs.grad
+    grad_L = L.grad#*mask
+    #grad_d_p = A_adj_pytorch(grad_xs,kernel)*mask
+    grad_d_p = grad_xs*mask
+    #print(torch.abs(grad_L).max())
+    return grad_d_p, grad_d_p, grad_L.view(t,n*n), loss.detach().item()
+
+def compute_spicy_mayo_rotatedSpeckles_grad_diff_disks(xd,xp,xl,rotated_data,pa_derotate_matrix,dilatation_matrix,compute_loss,kernel,mask):
+    _,t,n,_ = rotated_data.shape
+    xs = xp + xd
+    
+    rotated_data.requires_grad=False
+    kernel.requires_grad=False
+    L = xl.view(t,n,n)
+    L.requires_grad = True
+    L.grad=None
+    xs.requires_grad = True
+    
+    #conv_xs_0 = A_pytorch(xs[0],kernel[0])
+    #conv_xs_1 = A_pytorch(xs[1],kernel[1])
+    conv_xs_0 = xs[0]
+    conv_xs_1 = xs[1]
+
+    rotated_L = kornia.warp_affine(L.unsqueeze(1).float(), pa_derotate_matrix, dsize=(n,n)).squeeze(1)
+    loss = compute_loss(conv_xs_0 + rotated_L - rotated_data[0]) + compute_loss(conv_xs_1 + scale_cube(rotated_L,dilatation_matrix) - rotated_data[1])
+    
+    loss.backward()
+    grad_xs = xs.grad
+    grad_L = L.grad*mask
+    #grad_d_p = A_adj_pytorch(grad_xs,kernel)*mask
+    grad_d_p = grad_xs*mask
+    #print(torch.abs(grad_L).max())
+    return grad_d_p, grad_d_p, grad_L.view(t,n*n), loss.detach().item()
 
 
 def cube_rotate_kornia(cube,pa_rotate_matrix):
-    t,n,_ = cube.shape
-    torch_cube = torch.tensor(cube,requires_grad=False).expand(t,n,n).unsqueeze(1).float()
-    return kornia.warp_affine(torch_cube, pa_rotate_matrix, dsize=(n,n)).squeeze(1).detach().numpy()
+    with torch.no_grad():
+        t,n,_ = cube.shape
+        torch_cube = cube.expand(t,n,n).unsqueeze(1).float()
+        return kornia.warp_affine(torch_cube, pa_rotate_matrix, dsize=(n,n)).squeeze(1).detach()
     
 def get_all_rotation_matrices(angles,center_image,dtype):
-    center: torch.tensor = torch.ones(1, 2)
+    device = angles.device
+    center: torch.tensor = torch.ones(1, 2,device=device)
     center[..., 0] = center_image[0] # x
     center[..., 1] = center_image[1] # y
-    scale: torch.tensor = torch.ones(1,2)
+    scale: torch.tensor = torch.ones(1,2,device=device)
     t, = angles.shape
-    list_rot_mat = torch.zeros((t,2, 3)).type(dtype)
+    list_rot_mat = torch.zeros((t,2, 3),device=device).type(dtype)
     for i in range(t):
-        theta = torch.ones(1) * (angles[i])
+        theta = torch.ones(1,device=device) * (angles[i])
         #alpha = torch.cos(theta)
         #beta = torch.sin(theta)
         list_rot_mat[i,:,:] = kornia.get_rotation_matrix2d(center, theta, scale)
     return list_rot_mat
 
-def get_rotation_center_and_mask(n,corono_radius,center_coord):
-    if center_coord:
-        pass
-    else:
-        center_coord = (n // 2 - 0.5, n // 2 - 0.5)
+def get_mask(n,corono_radius,center_coord):
     cx, cy = center_coord
     xx, yy = np.ogrid[:n, :n]
     circle =  np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) # eq of circle. sq dist to center
     inner_circle_mask = (circle > corono_radius)  # boolean mask
     outside_circle_mask = (circle < np.floor(n/2-2))
     mask = inner_circle_mask*outside_circle_mask
-    return center_coord, mask
+    return mask
 
 
 def get_huber_parameters(algo):
@@ -356,24 +426,38 @@ def get_huber_parameters(algo):
     proportion_pixels_to_keep = 0.999
     if algo.parameters_algo['data_name'] == "SPHERE_HR4796A_clean":
         proportion_pixels_to_keep = 0.99
-    if algo.parameters_algo['data_name'] == "HD135344B_IRDIS_2018_specal":
-        proportion_pixels_to_keep = 0.98
-    t,n,_ = algo.data.shape
-    U_L0,_,_ = randomized_svd(algo.xl.reshape(t,n*n), n_components=algo.parameters_algo['rank'], n_iter=5,transpose='auto')
-    Low_rank_xl = (U_L0 @ U_L0.T @ algo.xl.reshape(t,n*n) ).reshape(t,n,n)
+    if algo.parameters_algo['data_name'] == "HD135344B_IRDIS_2018":
+        print('we are here')
+        proportion_pixels_to_keep = 0.96
+    if len(algo.data.shape)==3:
+        t,n,_ = algo.data.shape
+    else:
+        _,t,n,_ = algo.data.shape
+    if algo.FRIES:
+        Low_rank_xl = (algo.xl.view(algo.t,algo.n*algo.n) @ algo.V @ algo.V.T).view(algo.t,algo.n,algo.n).cpu().detach().numpy()
+    else:
+        Low_rank_xl = (algo.U_L0 @ algo.U_L0.T @ algo.xl.view(algo.t,algo.n*algo.n) ).view(algo.t,algo.n,algo.n).cpu().detach().numpy()
     cube_xs = np.zeros((algo.t,algo.n,algo.n))
-    cube_xs[:,:,:] = algo.GreeDS_frame 
-    cube_xs = cube_rotate_kornia(cube_xs,algo.pa_rotate_matrix)
-    error = algo.data - Low_rank_xl - cube_xs
-
+    cube_xs[:,:,:] = algo.GreeDS_frame.cpu().detach().numpy()
+    cube_xs = cube_rotate_kornia(torch.from_numpy(cube_xs),algo.pa_rotate_matrix.cpu()).detach().numpy()
+    if len(algo.data.shape)==3:
+        error = algo.data_np - Low_rank_xl - cube_xs
+    else:
+        error = np.zeros((2*t,n,n))
+        error[:t,:,:] = algo.data_np[0,:,:] - Low_rank_xl - cube_xs
+        error[t:,:,:] = algo.data_np[1,:,:] - scale_cube(torch.from_numpy(Low_rank_xl).to(algo.device),algo.dilatation_matrix).cpu().detach().numpy()  - cube_xs
     sigma_by_annulus = np.ones((n,n))
-    for i in range(n//(width_annulus*2)):
+    estimation_mask = np.zeros((n,n))
+    #print('WARNING: check this +1 in the next line!!!: (in operators.py) ')
+    for i in range(n//(width_annulus*2)+1):
         inner_annulus = i*width_annulus
         annulus_mask_ind = vip.var.shapes.get_annulus_segments(sigma_by_annulus,inner_annulus,width_annulus,mode='ind')
         errors_in_annulus = error[:,annulus_mask_ind[0][0],annulus_mask_ind[0][1]]
         sigma_by_annulus[annulus_mask_ind[0][0],annulus_mask_ind[0][1]] = np.sqrt(np.var(errors_in_annulus))
+        estimation_mask[annulus_mask_ind[0][0],annulus_mask_ind[0][1]] = 1
+    estimation_mask *= algo.mask.cpu().detach().numpy()
 
-    normalized_error = error/sigma_by_annulus*algo.mask
+    normalized_error = error/sigma_by_annulus*algo.mask.cpu().detach().numpy()
 
     min_values = 0
     max_values = np.sort(np.abs(normalized_error).ravel())[int(proportion_pixels_to_keep*t*n**2)] # 
@@ -383,7 +467,7 @@ def get_huber_parameters(algo):
 
     total_number_in_bin = 0
     for kk in range(N_bins):
-        who_is_in_bin = (np.abs(normalized_error) >= values[kk])*1.*(np.abs(normalized_error) < values[kk+1])*algo.mask
+        who_is_in_bin = (np.abs(normalized_error) > values[kk])*1.*(np.abs(normalized_error) <= values[kk+1])*estimation_mask
         pdf[kk] = (np.sum(who_is_in_bin))
         total_number_in_bin += pdf[kk]
     pdf = pdf/total_number_in_bin
@@ -405,15 +489,15 @@ def get_huber_parameters(algo):
     except:
         print('Huber-loss NOT ESTIMATED!')
         import sys
-        if sys.platform != 'linux': # for me, this means I am running on keneda or nielsen
-            import matplotlib.pyplot as plt
-            plt.plot(x, y, 'o')
-            plt.show()
-            print('We display the negative log-likelihood of normalized residuals')
-        else:
-            print('No display available, run in local to look at the negative log-likelihood of normalized residuals')
-        c = float(input('Choose value of c :   ') )
+        #if sys.platform != 'linux': # for me, this means I am running on keneda or nielsen
+        import matplotlib.pyplot as plt
+        plt.plot(x, y, 'o')
+        plt.show()
+        print('We display the negative log-likelihood of normalized residuals')
+        #else:
+        #    print('No display available, run in local to look at the negative log-likelihood of normalized residuals')
         delta = float(input('Choose value of delta :   ') )
+        c = float(input('Choose value of c :   ') )
         pw = delta, c
     algo.negative_log_hist_x = x
     algo.negative_log_hist_y = y

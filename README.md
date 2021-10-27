@@ -19,8 +19,9 @@ The document is available at https://bpairet.github.io/ (work in progress)
 
 Dependencies
 ------------
+pytorch >= 1.8
+kornia
 pyShearLab : https://github.com/stefanloock/pyshearlab
-simplex_projection.py : https://gist.github.com/daien/1272551
 
 
 Attribution
@@ -41,3 +42,4 @@ MAYO pipeline, from Pairet et al. 2020
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
+
